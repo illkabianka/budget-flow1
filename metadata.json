@@ -1,0 +1,8 @@
+{
+  "name": "FlowBudget: AI Financial Assistant",
+  "description": "An intelligent application for managing personal finances. It uses AI to simplify data entry and analysis, supporting text, voice, and image-based transaction recognition, financial analytics, and speech synthesis for a natural user experience.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
