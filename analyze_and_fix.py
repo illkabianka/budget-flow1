@@ -1,31 +1,28 @@
 import os
 import re
-import google.generativeai as genai
+from perplexity import Perplexity  # официальная библиотека Perplexity 
 
-# 1. Берём ключ из переменной окружения (его передаёт GitHub Actions)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("Переменная GEMINI_API_KEY не установлена. Проверь GitHub Secrets.")
+# 1. Ключ API из переменной окружения (GitHub Actions передаст его из секрета)
+API_KEY = os.getenv("PERPLEXITY_API_KEY")
+if not API_KEY:
+    raise RuntimeError("PERPLEXITY_API_KEY не установлен. Проверь секреты GitHub.")
 
-# 2. Настраиваем Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Можно выбрать модель полегче/побыстрее, например:
-MODEL_NAME = "gemini-1.5-flash"  # при желании можно заменить на pro, но flash дешевле и быстрее
-
-model = genai.GenerativeModel(MODEL_NAME)
+# 2. Инициализируем клиента Perplexity
+client = Perplexity(
+    api_key=API_KEY,  # можно было бы не передавать, он и так возьмёт PERPLEXITY_API_KEY из env 
+)
 
 # 3. Собираем исходный код проекта
 project_code = ""
 
 for root, dirs, files in os.walk("."):
-    # Пропускаем служебные папки, чтобы не заспамить модель
+    # пропускаем служебные папки
     skip_dirs = {".git", ".github", "__pycache__", ".venv", "venv", "node_modules"}
     if any(sd in root for sd in skip_dirs):
         continue
 
     for filename in files:
-        # Список расширений под твою логику (можешь подправить)
+        # расширения файлов, которые считаем кодом
         if filename.endswith((
             ".py", ".js", ".ts", ".tsx", ".jsx",
             ".java", ".kt", ".cs", ".cpp", ".c", ".go",
@@ -36,7 +33,7 @@ for root, dirs, files in os.walk("."):
                 with open(filepath, "r", encoding="utf-8") as f:
                     code_content = f.read()
             except Exception:
-                # если файл не читается (кодировка и т.п.) — просто пропускаем
+                # если файл не читается — просто пропускаем
                 continue
 
             project_code += f"\n\nFile: {filepath}\n``` \n{code_content}\n```"
@@ -45,18 +42,18 @@ if not project_code.strip():
     print("[WARN] Не найдено ни одного файла кода для анализа.")
     raise SystemExit(0)
 
-# 4. Формируем prompt для Gemini
+# 4. Формируем промпт для Perplexity
 prompt = (
     "Ты — ассистент по программированию и ревью кода.\n"
     "Тебе даётся код всего проекта (несколько файлов).\n\n"
     "ТВОЯ ЗАДАЧА:\n"
-    "1) Найти ТЕХНИЧЕСКИЕ ошибки (синтаксические, неправильные вызовы API, ошибки, "
-    "которые мешают запуску/работе кода).\n"
+    "1) Найти ТЕХНИЧЕСКИЕ ошибки (синтаксические, неправильные вызовы API, ошибки,\n"
+    "   которые мешают запуску/работе кода).\n"
     "2) Найти КОНЦЕПТУАЛЬНЫЕ ошибки (логика, поведение, несоответствие очевидным требованиям и т.п.).\n\n"
     "ФОРМАТ ОТВЕТА:\n"
     "- Сначала коротко опиши, что ты нашёл, текстом.\n"
-    "- Если есть ТЕХНИЧЕСКИЕ ошибки и ты можешь их исправить, верни ИСПРАВЛЕННЫЙ КОД "
-    "ТОЛЬКО ДЛЯ ТЕХ файлов, где есть такие ошибки, в формате:\n"
+    "- Если есть ТЕХНИЧЕСКИЕ ошибки и ты можешь их исправить, верни ИСПРАВЛЕННЫЙ КОД\n"
+    "  ТОЛЬКО ДЛЯ ТЕХ файлов, где есть такие ошибки, в формате:\n"
     "  File: относительный/путь/к/файлу\n"
     "  ```\n"
     "  <ПОЛНЫЙ НОВЫЙ КОД ЭТОГО ФАЙЛА>\n"
@@ -66,21 +63,30 @@ prompt = (
     f"{project_code}"
 )
 
-# 5. Вызываем Gemini
-print("[INFO] Отправляем код в Gemini, это может занять некоторое время...")
+# 5. Вызываем Perplexity Chat Completions (модель sonar) 
+print("[INFO] Отправляем код в Perplexity, это может занять некоторое время...")
 
-response = model.generate_content(prompt)
+completion = client.chat.completions.create(
+    model="sonar",           # базовая модель Perplexity; можно сменить, если нужно
+    messages=[
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ],
+)
 
-analysis = response.text or ""
-print("===== GEMINI ANALYSIS START =====")
+# формат совместим с OpenAI: choices[0].message.content 
+analysis = completion.choices[0].message.content
+print("===== PERPLEXITY ANALYSIS START =====")
 print(analysis)
-print("===== GEMINI ANALYSIS END =====")
+print("===== PERPLEXITY ANALYSIS END =====")
 
-# 6. Ищем блоки с исправленным кодом:
-#    Формат: File: путь/к/файлу
-#            ```
-#            <code>
-#            ```
+# 6. Находим блоки с исправленным кодом:
+#    File: путь/к/файлу
+#    ```
+#    <код>
+#    ```
 pattern = r"File:\s*(.+?)\n```(?:\s*\n)?(.*?)```"
 code_blocks = re.findall(pattern, analysis, re.DOTALL)
 
@@ -93,7 +99,6 @@ for file_path, new_code in code_blocks:
     if not file_path or not new_code:
         continue
 
-    # иногда модель может вывести повторно 'File:' в имени — подстрахуемся
     if file_path.lower().startswith("file:"):
         file_path = file_path[5:].strip()
 
@@ -107,12 +112,12 @@ for file_path, new_code in code_blocks:
     except Exception as e:
         print(f"[ERROR] Не удалось записать в {file_path}: {e}")
 
-# 7. Итоговая информация
+# 7. Итог
 if not files_modified:
     print(
-        "[INFO] Gemini не вернул блоки с исправленным кодом.\n"
+        "[INFO] Perplexity не вернул блоки с исправленным кодом.\n"
         "Скорее всего, либо нет технических ошибок, либо есть только концептуальные замечания.\n"
-        "Смотри текст анализа выше (между GEMINI ANALYSIS START/END)."
+        "Смотри текст анализа выше (между PERPLEXITY ANALYSIS START/END)."
     )
 else:
     print("[INFO] Технические ошибки исправлены в файлах:")
