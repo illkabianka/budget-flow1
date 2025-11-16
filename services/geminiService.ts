@@ -1,13 +1,14 @@
+typescript
 import { GoogleGenAI, Type, Modality, LiveSession, LiveServerMessage } from "@google/genai";
 import { AiParsedTransaction } from '../types';
 
-// FIX: Check for the API key directly from process.env.
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable is not set.");
+// Получаем API ключ из переменных окружения Vite
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+if (!apiKey) {
+  throw new Error("VITE_GEMINI_API_KEY environment variable is not set.");
 }
 
-// FIX: Use process.env.API_KEY directly in the constructor as per the coding guidelines.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey });
 
 const SYSTEM_INSTRUCTION = `Ты — умный финансовый ассистент внутри приложения FlowBudget. Твоя роль - помогать пользователю вести личные финансы. Ты должен понимать запросы на русском, английском и казахском, но всегда отвечать на русском. Твоя основная задача - преобразовать текстовые команды пользователя в структурированный JSON объект транзакции. Поля: type ("income", "expense", "transfer"), amount (число), currency (строка, "KZT", "RUB", "USD"), date (ISO "YYYY-MM-DD"), fromAccountName, toAccountName, categoryName, payeeName, note. Если информации не хватает, оставь поле пустым. Не выдумывай данные. 'Сегодня' и другие относительные даты преобразуй в конкретные.`;
 
@@ -86,7 +87,6 @@ export const generateSpeech = async (text: string): Promise<string> => {
     }
     return base64Audio;
 };
-
 
 export const connectToLive = (callbacks: {
     onOpen: () => void;

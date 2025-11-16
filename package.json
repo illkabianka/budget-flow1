@@ -1,5 +1,6 @@
+json
 {
-  "name": "flowbudget:-ai-financial-assistant",
+  "name": "flowbudget-ai-financial-assistant",
   "private": true,
   "version": "0.0.0",
   "type": "module",

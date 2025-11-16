@@ -1,3 +1,4 @@
+typescript
 import React, { createContext, useContext, ReactNode, useCallback } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { Transaction, Account, Category, CategoryGroup, AccountGroup } from '../types';
@@ -126,8 +127,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteAccounts = useCallback((accountIds: Set<string>) => {
       setAccounts(prev => prev.filter(a => !accountIds.has(a.id)));
-      // TODO: Also delete transactions associated with these accounts or handle them.
-  }, [setAccounts]);
+      // Удаляем транзакции, связанные с удалёнными счетами
+      setTransactions(prev => prev.filter(tx => {
+          const isFromDeleted = tx.fromAccountId && accountIds.has(tx.fromAccountId);
+          const isToDeleted = tx.toAccountId && accountIds.has(tx.toAccountId);
+          return !(isFromDeleted || isToDeleted);
+      }));
+  }, [setAccounts, setTransactions]);
 
   const addCategory = useCallback((category: Omit<Category, 'id'>) => {
     const newCategory: Category = {

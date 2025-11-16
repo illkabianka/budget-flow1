@@ -1,3 +1,4 @@
+typescript
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { SendIcon, PaperclipIcon, MicIcon, StopIcon } from './icons';
 import Loader from './Loader';
@@ -5,7 +6,7 @@ import { parseTransactionFromText, analyzeImage, connectToLive } from '../servic
 import { useData } from '../context/DataContext';
 import { AiParsedTransaction } from '../types';
 import { decode, decodeAudioData, encode } from '../utils/audioUtils';
-import { Blob, LiveServerMessage, LiveSession } from '@google/genai';
+import { LiveServerMessage, LiveSession } from '@google/genai';
 
 interface InputAreaProps {
   onTransactionAdded: () => void;
@@ -26,7 +27,7 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const mediaStreamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
-  let nextStartTime = 0;
+  const nextStartTimeRef = useRef(0);
 
 
   const handleAddTransaction = (parsedTx: AiParsedTransaction) => {
@@ -35,7 +36,6 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
     let category = categories.find(c => c.name.toLowerCase() === parsedTx.categoryName?.toLowerCase());
     
     if (!category && parsedTx.categoryName) {
-        // FIX: The created category object must match the Category type by including icon and groupId.
         category = {
             id: `new-cat-${parsedTx.categoryName.toLowerCase().replace(/\s+/g, '-')}`,
             name: parsedTx.categoryName,
@@ -55,7 +55,7 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
         payee: parsedTx.payeeName,
         note: parsedTx.note,
     });
-    onTransactionAdded(); // Close modal on success
+    onTransactionAdded();
   };
 
   const handleSubmit = useCallback(async (textOverride?: string) => {
@@ -116,12 +116,12 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
       const ctx = outputAudioContextRef.current;
       const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
       
-      nextStartTime = Math.max(nextStartTime, ctx.currentTime);
+      nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(ctx.destination);
-      source.start(nextStartTime);
-      nextStartTime += audioBuffer.duration;
+      source.start(nextStartTimeRef.current);
+      nextStartTimeRef.current += audioBuffer.duration;
   };
 
   const startListening = async () => {
@@ -138,11 +138,16 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
 
                 scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
                     const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-                    const pcmBlob: Blob = {
-                        data: encode(new Uint8Array(new Int16Array(inputData.map(f => f * 32768)).buffer)),
-                        mimeType: 'audio/pcm;rate=16000',
-                    };
-                    sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob }));
+                    const pcmData = encode(new Uint8Array(new Int16Array(inputData.map(f => f * 32768)).buffer));
+                    
+                    sessionPromise.then(session => {
+                        session.sendRealtimeInput({
+                            media: {
+                                data: pcmData,
+                                mimeType: 'audio/pcm;rate=16000',
+                            }
+                        });
+                    });
                 };
                 mediaStreamSourceRef.current.connect(scriptProcessorRef.current);
                 scriptProcessorRef.current.connect(audioContextRef.current!.destination);
@@ -189,7 +194,7 @@ const InputArea: React.FC<InputAreaProps> = ({ onTransactionAdded }) => {
       }
   };
   
-   useEffect(() => {
+  useEffect(() => {
     return () => {
       stopListening();
     };

@@ -1,3 +1,4 @@
+typescript
 import React, { useState } from 'react';
 import BottomNav from './components/BottomNav';
 import { DataProvider } from './context/DataContext';
@@ -26,8 +27,8 @@ const App: React.FC = () => {
     if (parts.length > 1) {
         setCurrentPage(parts.slice(0, -1).join('/'));
     } else {
-        // Fallback to overview if something goes wrong
-        setCurrentPage('settings');
+        // Fallback to overview if at root level
+        setCurrentPage('overview');
     }
   };
 
